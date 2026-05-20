@@ -764,8 +764,8 @@ XSS_PAYLOADS = [
 ]
 
 SSTI_PAYLOADS = {
-    "{{7*7}}": ["49"], "${7*7}": ["49"], "#{7*7}": ["49"],
-    "{{7*'7'}}": ["7777777", "49"], "<%= 7*7 %>": ["49"],
+    "{{73*79}}": ["5767"], "${73*79}": ["5767"], "#{73*79}": ["5767"],
+    "<%= 73*79 %>": ["5767"], "*{73*79}": ["5767"],
 }
 
 SQLI_ERROR_PAYLOADS = ["'", '"', "' OR ''='", "1'", "\\"]
@@ -939,30 +939,30 @@ async def scan_ssti_async(param_urls, delay=0, concurrency=20):
                     if confirmed: break
                     async with sem:
                         if delay: await asyncio.sleep(delay)
-                        r = await async_get(build_fuzz_url(url, param, payload), client=client)
+                        r = await async_get(build_fuzz_url(url, param, canary + payload), client=client)
                     if not r: continue
 
-                    matched = next((e for e in expected_list if e in r.text and e not in baseline_body), None)
+                    matched = next((e for e in expected_list if (canary + e) in r.text), None)
                     if not matched: continue
 
                     # Double-confirm with different expression
                     async with sem:
-                        r2 = await async_get(build_fuzz_url(url, param, "{{3*3}}"), client=client)
-                    if not r2 or ("9" not in r2.text or "9" in baseline_body):
+                        r2 = await async_get(build_fuzz_url(url, param, canary + "{{45*45}}"), client=client)
+                    if not r2 or (canary + "2025") not in r2.text:
                         async with sem:
-                            r2 = await async_get(build_fuzz_url(url, param, "${3*3}"), client=client)
-                        if not r2 or "9" not in r2.text: continue
+                            r2 = await async_get(build_fuzz_url(url, param, canary + "${45*45}"), client=client)
+                        if not r2 or (canary + "2025") not in r2.text: continue
 
                     # Triple-confirm
                     async with sem:
-                        r3 = await async_get(build_fuzz_url(url, param, "{{5*5}}"), client=client)
-                    engine = "Jinja2/Twig" if (r3 and "25" in r3.text) else "EL/Freemarker"
+                        r3 = await async_get(build_fuzz_url(url, param, canary + "{{91*91}}"), client=client)
+                    engine = "Jinja2/Twig" if (r3 and (canary + "8281") in r3.text) else "EL/Freemarker"
 
-                    idx      = r.text.find(matched)
+                    idx      = r.text.find(canary + matched)
                     evidence = r.text[max(0, idx - 50): idx + 80]
                     add_finding(
                         "SSTI (Server-Side Template Injection)", "critical",
-                        build_fuzz_url(url, param, payload),
+                        build_fuzz_url(url, param, canary + payload),
                         f"Param '{param}': {payload!r}→'{matched}' (triple-confirmed). Engine: {engine}",
                         evidence, confidence="confirmed",
                     )
@@ -1246,7 +1246,7 @@ async def scan_open_redirect_async(param_urls, delay=0, concurrency=30):
                     async with sem:
                         if delay: await asyncio.sleep(delay)
                         r = await async_get(fuzzed, client=client_follow)
-                    if r and REDIR_DOMAIN in str(r.url):
+                    if r and urllib.parse.urlparse(str(r.url)).netloc == REDIR_DOMAIN:
                         add_finding(
                             "Open Redirect", "medium", fuzzed,
                             f"Param '{param}': redirected to {r.url}",
